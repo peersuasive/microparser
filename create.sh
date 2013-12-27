@@ -6,8 +6,8 @@ usage() {
 file="$1"; cn="$2"; inh="$3"; screen="$4"
 ! [[ -r "$file" ]] && echo "Error: Can't read input file" && usage && exit 1
 
-home=$(readlink -f "${0%/*}")
-
+home=$(dirname "$(readlink -f "${0%}")")
+echo "$home"
 LUA=$(which luajit) || $(which lua) || { echo "found neither lua nor luajit" && exit 1; }
 
 CPP=$(which gcc) || $(which cpp) || $(which clang) || { echo "found neither gcc nor clang" && exit 1; }
