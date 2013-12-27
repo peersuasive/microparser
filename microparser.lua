@@ -190,6 +190,8 @@ local grammar = P{ "grammar";
                     * spaces^0 * P")"
                   ) , "args" ),
 
+    pure        = spaces^0 * P"=" * spaces^0 * P"0" * spaces^0 * #P";",
+
     method_a    = Ct( 
                     Cg( V"template" * spaces^0, "template" )^0
                     * (V"id_type_t" + V"id_type") * spaces^0 
@@ -197,7 +199,7 @@ local grammar = P{ "grammar";
                     * V"args"
                   ) * spaces^0
                   * ( (keywords + juce_macros) * spaces^0)^0
-                  * ( V"block" + P";" )
+                  * ( V"block" + P";" + V"pure" )
                   ,
 
     method      = Ct(

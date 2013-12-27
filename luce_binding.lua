@@ -293,8 +293,8 @@ end
 
 -- prepare methods
 for k, v in next, methods do
-    if ( v.visibility == "public" or ( do_inherit and v.visibility == "protected") ) then
-
+    --if ( v.visibility == "public" or ( do_inherit and v.visibility == "protected") ) then
+    if ( v.visibility ~= "private" ) then
     -- setters
     if ( v.method.return_type == "void" ) then
         local todo = false
@@ -402,7 +402,8 @@ end
 
 -- callbacks
 for _, c in next, callbacks do
-    if ( c.visibility == "public" ) then
+    --if ( c.visibility == "public" or ( do_inherit and c.visibility == "protected") ) then
+    if ( c.visibility ~= "private" ) then
         local name = c.callback.name
         local args = ""
         if ( #c.callback.args > 0 ) then
