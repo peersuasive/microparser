@@ -102,7 +102,8 @@ local grammar = P{ "grammar";
                    * ( V"value" )^0
                    )/"", "preprocessor"),
 
-    visibility  = Cg(P"public" + P"private" + P"protected", "visibility") * spaces^0 * P":",
+    visibility  = Cg(P"public" + P"private" + P"protected", "visibility") 
+                  * spaces^0 * P":" * (P" ")^0 * (P"\r"+P"\n")^1,
 
     id          = (identifier - keywords - V"prewords") * #spaces^0,
     class_meth  = P"::" * spaces^0 * V"id",
@@ -145,13 +146,28 @@ local grammar = P{ "grammar";
     vars_a      = Cg(
                   (V"id_type_t" + V"id_type") * spaces^0 * (V"id_type_t" + V"id_type")
                   , "vars")
-                  * #spaces^0 * #(P"," + P";"),
+                  * #spaces^0 
+                  * #(P":" + P"," + P";"),
 
-    vars        = Ct(
+    --bool selected : 1;
+    bitfield    = Ct(Cg(
+                    (V"id_type_t" + V"id_type") * spaces^0 * (V"id_type_t" + V"id_type")
+                    * spaces^0 * P":" * spaces^0 * R"19" 
+                    * spaces^0
+                    * P";"
+                  , "vars")
+                  * Cg(Cc"var", "type")
+                  ) / function(a)
+                      vars[#vars+1] = a
+                  end
+                  ,
+
+    vars        = V"bitfield" + Ct(
                     Cg(
                         V"vars_a" * spaces^0 
                         * (P"," * spaces^0 * (V"id_type_t"+V"id_type"))^0 
-                        * spaces^0 * P";"
+                        * spaces^0 
+                        * P";"
                     , "vars")
                     * Cg(Cc"var", "type")
                   )
