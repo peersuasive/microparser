@@ -462,7 +462,7 @@ end
 
 setO(cpp)
 
-nformat(cc, lclass, "cpp", 2013)
+nformat(cc, lclass, "cpp", 2014)
 
 nformat('#include "%s_inh.h"', lclass)
 nl()
