@@ -416,15 +416,15 @@ for _, c in next, callbacks do
                 if ( a.template_call ) then
                     tc = {}
                     for _,t in next, a.template_call do
-                        t[#t+1] = t.type
+                        tc[#tc+1] = t.type
                     end
-                    tc = "<" .. table.concat(t, ", ") .. ">"
+                    tc = "<" .. table.concat(tc, ", ") .. ">"
                 end
                 local value = a.value and " = "..a.value.vvalue or ""
                 local const = a.is_const and "const " or ""
                 args[#args+1] = string.format("%s%s%s%s%s %s%s", itab, const, rtype, tc, p, vname, value)
             end
-            args = " "..table.concat(args, ",").." "
+            args = " "..table.concat(args, ", ").." "
         end
         -- TODO
         local body = {}
