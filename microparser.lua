@@ -271,7 +271,9 @@ local grammar = P{ "grammar";
 
     constructor_a   = P"virtual"^0 * spaces^0 * Ct( 
                         Cg( V"id", "name" ) * spaces^0 
-                        * V"args" * spaces^0 * ( V"block" + P";")
+                        * V"args" * spaces^0 
+                        * ( (keywords + juce_macros) * spaces^0)^0
+                        * ( V"block" + P";")
                       ),
     constructor     = Ct( 
                         Cg( V"constructor_a", "constructor" ) 
