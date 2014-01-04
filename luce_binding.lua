@@ -132,7 +132,7 @@ local function dformat(f, ...)
     format(f, ...)
 end
 local function nl()
-    format("\n")
+    write(string.format("\n"))
 end
 
 local types = {
