@@ -666,6 +666,7 @@ iformat("public:") nl()
     nformat("static const Luna<%s>::InheritenceF inheritsF[];", lclass)
     nformat("static const Luna<%s>::PropertyType properties[];", lclass)
     nformat("static const Luna<%s>::FunctionType methods[];", lclass)
+    nformat("static const Luna<%s>::Enum enums[];", lclass)
     nl()
 
 if not ( do_inherit ) then
