@@ -144,7 +144,9 @@ local grammar = P{ "grammar";
                   ), "template_call"),
 
     vars_a      = Cg(
-                  (V"id_type_t" + V"id_type") * spaces^0 * (V"id_type_t" + V"id_type")
+                  (V"id_type_t" + V"id_type") 
+                  * spaces^0 * P"const"^-1 * spaces^0
+                  * (V"id_type_t" + V"id_type")
                   , "vars")
                   * #spaces^0 
                   * #(P":" + P"," + P";"),
@@ -302,6 +304,7 @@ local grammar = P{ "grammar";
 
     destructor      = P"virtual"^0 * spaces^0 
                       * P"~" * spaces^0 * V"id" * spaces^0 * P"(" * spaces^0 * P")" * spaces^0
+                      * ( (keywords+juce_macros) * spaces^0 )^0
                       * (V"block" + P";"),
     
     eoc             = P";",
