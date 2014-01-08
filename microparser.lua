@@ -55,7 +55,7 @@ local keywords   = (P"const" + P"static" + P"noexcept" +P"override" + P"friend"
                    + P"else" + P"extern" + P"for" + P"goto" + P"if" 
                    + P"switch" + P"typedef" + P"unsigned"
                    + P"volatile" + P"while"
-                   + P"explicit" 
+                   + P"explicit" + P"inline"
                    + P"virtual") * #(spaces + P";" + P"{" + P[[\]])
 
 local reserved   = ((P"public" + P"private" + P"protected") * spaces^0 * P":") 
@@ -63,7 +63,7 @@ local reserved   = ((P"public" + P"private" + P"protected") * spaces^0 * P":")
                     + P"break" + P"case" + P"const" + P"continue" + P"default" + P"do" 
                     + P"register" + P"return" + P"signed" + P"sizeof" 
                     + P"else" + P"extern" + P"for" + P"goto" + P"if" 
-                    + P"switch" + P"typedef" + P"unsigned"
+                    + P"switch" + P"typedef" + P"unsigned" + P"inline"
                     + P"volatile" + P"while") * #(spaces + P";" + P"{" + P[[\]]) )
 
 local identifier = idchar * (idchar+digit)^0 - keywords
