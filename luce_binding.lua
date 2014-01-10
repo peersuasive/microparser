@@ -501,7 +501,7 @@ if ( do_inherit ) then
     iformat("{") nl()
 
     nformat("%s::setName(myName);", class)
-    nformat("//%s::addListener(this);", lclass)
+    nformat("//%s::addListener(this);", class)
     for k, _ in next, lcallbacks or {} do
         nformat('reg("%s");', k)
     end
