@@ -364,7 +364,7 @@ for k, v in next, methods do
         body[#body+1] = postfix()
 
         local real_name = v.method.name
-        local name = real_name:gsub("^get",""):gsub("^is","")
+        local name = real_name:gsub("^get",""):gsub("^is",""):gsub("^are","")
         if ( lgetters[name] ) then
             table.insert(body, 1, "// override")
             if ("table" == type(lgetters[name].body[1]) ) then
