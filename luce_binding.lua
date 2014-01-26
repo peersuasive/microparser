@@ -27,7 +27,7 @@ local code = mp:parse( assert(arg and arg[1], "Missing input class") )
 assert( code, "Parsing failed" )
 
 local lclass = arg[2] or "L"..code.class.name
-local do_inherit = (not arg[3] and true) or (arg[3]=="false")
+local do_inherit = (not arg[3] and true) or (arg[3]~="false")
 local no_file = arg[4] and (arg[4]=="true")
 
 local class, sep
@@ -53,6 +53,25 @@ for _,c in next, code.callbacks do
     end
 end
 
+-- LComponent methods
+--
+local function Set(t, k)
+    t[k] = true
+end
+lcomponent = {}
+if ( do_inherit ) then
+    local inh = io.open("LComponent_inh.list") or io.open("../LComponent_inh.list")
+    if(inh)then
+        while (true) do
+            local f = inh:read("*l")
+            if not f then break end
+            Set( lcomponent, f)
+        end
+        inh:close()
+    else
+        print("WARNING: missing LComponent's list of functions")
+    end
+end
 --
 -- utils
 --
@@ -295,6 +314,7 @@ end
 for k, v in next, methods do
     --if ( v.visibility == "public" or ( do_inherit and v.visibility == "protected") ) then
     if ( v.visibility ~= "private" ) then
+    if not( lcomponent[v.method.name] ) then
     -- setters
     if ( v.method.return_type == "void" ) then
         local todo = false
@@ -377,7 +397,8 @@ for k, v in next, methods do
             lgetters[name] = { name = real_name, body = body }
         end
     end
-
+    
+    end -- end belongs to LComponent
     end -- end visibility check
 end
 
