@@ -500,14 +500,17 @@ if ( do_inherit ) then
 
     iformat("{") nl()
 
-    nformat("%s::setName(myName);", class)
+    nformat("%s::setName(myName());", class)
     nformat("//%s::addListener(this);", class)
+    --[[
     for k, _ in next, lcallbacks or {} do
         nformat('reg("%s");', k)
     end
+    --]]
     dformat("}") nl()
 else
     nformat("%s::%s(lua_State *Ls, Component* child_, const String& name_)", lclass, lclass)
+    nformat('    : LBase(L, "'..lclass..'", true')
     nformat("    : child(child_)")
     iformat("{")
     nl()
@@ -529,6 +532,8 @@ else
     nl()
     dformat("}") nl()
 end
+
+nl()
 nformat("%s::~%s(){}", lclass, lclass)
 
 nl()
@@ -537,6 +542,18 @@ for k, c in next, lcallbacks do
     nl()
     for _, l in next, c.body do
         nformat(l)
+    end
+end
+
+if(do_inherit)then
+    for _,e in next, { "mouseMove", "mouseEnter", "mouseExit", 
+                       "mouseDown", "mouseDrag", "mouseUp",
+                       "mouseDoubleClick", "mouseWheelMove", "mouseMagnify" } do
+        nl()
+        nformat("void %s::%s(const MouseEvent& e) {", lclass, e)
+        nformat("    LComponent::l%s(e)", e)
+        dformat("}")
+        nl()
     end
 end
 
@@ -704,6 +721,15 @@ iformat("private:") nl()
         nformat("// callbacks")
         for k,v in next, lcallbacks do
             nformat( "virtual void %s override;", v.proto )
+        end
+        nl()
+
+        if(do_inherit)then
+            for _,e in next, { "mouseMove", "mouseEnter", "mouseExit", 
+                               "mouseDown", "mouseDrag", "mouseUp",
+                               "mouseDoubleClick", "mouseWheelMove", "mouseMagnify" } do
+                nformat("virtual void %s(const MouseEvent&) override;", e)
+            end
         end
         nl()
     end
