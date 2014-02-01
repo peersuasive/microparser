@@ -28,7 +28,8 @@ assert( code, "Parsing failed" )
 
 local lclass = arg[2] or "L"..code.class.name
 local do_inherit = (not arg[3] and true) or (arg[3]~="false")
-local no_file = arg[4] and (arg[4]=="true")
+local do_base    = arg[4]=="true" or false
+local no_file = arg[5] and (arg[5]=="true")
 
 local class, sep
 if ( do_inherit ) then
@@ -160,10 +161,11 @@ local types = {
     ["std::string"] = "string",
     string = "string",
 
-    float  = "number",
-    int    = "number",
-    double = "number",
+    float  = "float",
+    int    = "int",
+    double = "double",
     number = "number",
+    uint8  = "uint8",
 
     bool   = "boolean",
 
@@ -178,12 +180,19 @@ local types = {
     object = "object",
 }
 
+local numbers = {
+    float = true,
+    int = true,
+    double = true,
+    number = true,
+    -- uint8 = true, ?
+}
 local function getType(c)
     return types[c] or "object"
 end
 local function getReturnMethod(c)
     local t = types[c] or "object"
-    if ( t == "number" ) then
+    if ( t == "number" or numbers[t] ) then
         return "LUA::returnNumber"
     elseif ( t == "string" ) then
         return "LUA::returnString"
@@ -191,10 +200,20 @@ local function getReturnMethod(c)
         return "LUA::returnBoolean"
     end
     --- do something with udata
-    return "LUA::TODO_RETURN_OBJECT_"..c
+    --return "LUA::TODO_RETURN_OBJECT_"..c
+    if ( lclass == "L"..c ) then
+        return "CHECK", 
+        string.format(
+            [[return LUA::storeAndReturnUserdata<%s>( new %s(LUA::Get(),]],
+            lclass, lclass
+        ), 
+        "));"
+    else
+        return "LUA::TODO_RETURN_OBJECT_"..c
+    end
 end
 
-local function getGetMethod(c, opt, n)
+local function getGetMethod(c, opt, n, p)
     local t = types[c] or "object"
 
     local pre = "LUA::"..(opt and "checkAndGet%s(" or "get%s(")
@@ -208,11 +227,18 @@ local function getGetMethod(c, opt, n)
         return pre:format("String")
     elseif ( t == "boolean" ) then
         return pre:format("Boolean")
+    elseif ( t == "uint8" or t == "int" or t == "float" or t == "double" ) then
+        return pre:format("Number<"..t..">")
     elseif ( t == "table" ) then
         return "LUA::getList(" .. (n and n or "") .. ")"
     end
     --- do something with udata
-    return "LUA::TODO_OBJECT_"..c
+    --return "LUA::TODO_OBJECT_"..c
+    if ( lclass == "L"..c) then
+        return string.format("%sLUA::from_luce<L%s>(2); // CHECK", not(p) and "*" or "", c)
+    else
+        return string.format("%sLUA::from_luce<L%s>(2); // TODO", not(p) and "*" or "", c)
+    end
 end
 
 local prefix = function()
@@ -298,8 +324,9 @@ local function build_arg(a, i, do_simple)
         tc = "<"..table.concat(tc, ",") .. ">"
     end
 
-    local luce_method = getGetMethod( a.return_type, value, i )
+    local luce_method = getGetMethod( a.return_type, value, i, p )
     local todo = luce_method:match("TODO") and "// " or ""
+    local check = luce_method:match("CHECK")
     p = p or ""
     tc = tc or ""
     if do_simple then
@@ -325,7 +352,7 @@ for k, v in next, methods do
             args = {}
             -- pass as parameter if only one arg required
             for i,a in next, v.method.args do
-                local arg, rt, todo_ = build_arg(a, i+1)
+                local arg, rt, todo_ = build_arg(a, 2)
                 todo = todo or todo_
                 body[#body+1] = arg
                 args[#args+1] = rt
@@ -358,23 +385,32 @@ for k, v in next, methods do
 
     -- getters
     else
-        local luce_method = getReturnMethod( v.method.return_type )
+        local luce_method, formatted, append = getReturnMethod( v.method.return_type )
         local todo = luce_method:match("TODO") and true
+        local check = luce_method:match("CHECK") and true
         local body = {}
         body[#body+1] = prefix()
         local args = ""
         if ( #v.method.args > 0 ) then
             args = {}
             for i,a in next, v.method.args do
-                local arg, rt, todo_ = build_arg(a, i)
+                local arg, rt, todo_ = build_arg(a, 2)
                 todo = todo or todo_
                 body[#body+1] = arg
                 args[#args+1] = rt
             end
             args = " "..table.concat(args, ", ").." "
         end
-        local meth = string.format("%s%s%s", class, sep, v.method.name)
-        body[#body+1] = string.format( "%s%sreturn %s( %s(%s) );", itab, todo and "// " or "", luce_method, meth, args )
+        if(check)then
+            body[#body+1] = string.format("%s// CHECK", itab)
+            local meth = string.format("%s%s%s", class, sep, v.method.name)
+            body[#body+1] = string.format("%s%s", itab, formatted)
+            body[#body+1] = string.format("%s    %s(%s)", itab, meth, args)
+            body[#body+1] = string.format("%s%s", itab, append)
+        else
+            local meth = string.format("%s%s%s", class, sep, v.method.name)
+            body[#body+1] = string.format( "%s%sreturn %s( %s(%s) );", itab, todo and "// " or "", luce_method, meth, args )
+        end
         if ( todo ) then
             body[#body+1] = string.format( "%slua_settop(LUA::Get(), 1); // added by TODO", itab )
             body[#body+1] = string.format( '%sreturn %s( "%s %s(%s)" );', 
@@ -515,26 +551,43 @@ nl()
 -- ctor/dtor
 nformat("/////// ctor/dtor")
 if ( do_inherit ) then
-    nformat("%s::%s(lua_State *L)", lclass, lclass)
-    nformat("    : LComponent(L, this),")
-    nformat("      %s( /* TODO: add args */ )", class)
+    if ( do_base ) then
+        nformat("%s::%s(lua_State *L)", lclass, lclass)
+        nformat('    : LBase(L, "'..lclass..'", true),')
+        nformat("      %s( /* TODO: add args */ )", class)
+        iformat("{") nl()
+        iformat("if ( lua_isstring(L, 2) )") nl()
+        nformat("myName( lua_tostring(L, 2) );")
+        dtab()
+        dformat("}") nl() 
+        nl()
+        nformat("%s::%s(lua_State *L, const %s& class_)", lclass, lclass, class)
+        nformat('    : LBase(L, "'..lclass..'", true),')
+        nformat("      %s( class_ )", class)
+        iformat("{") nl()
+        iformat("if ( lua_isstring(L, 2) )") nl()
+        nformat("myName( lua_tostring(L, 2) );")
+        dtab()
+        dformat("}") nl()
 
-    iformat("{") nl()
+    else
+        nformat("%s::%s(lua_State *L)", lclass, lclass)
+        nformat("    : LComponent(L, this),")
+        nformat("      %s( /* TODO: add args */ )", class)
 
-    nformat("%s::setName(myName());", class)
-    nformat("//%s::addListener(this);", class)
-    --[[
-    for k, _ in next, lcallbacks or {} do
-        nformat('reg("%s");', k)
+        iformat("{") nl()
+
+        nformat("%s::setName(myName());", class)
+        nformat("//%s::addListener(this);", class)
+        dformat("}") nl()
     end
-    --]]
-    dformat("}") nl()
 else
     nformat("%s::%s(lua_State *Ls, Component* child_, const String& name_)", lclass, lclass)
-    nformat('    : LBase(L, "'..lclass..'", true')
-    nformat("    : child(child_)")
+    nformat('    : LBase(L, "'..lclass..'", true),')
+    nformat("      child(child_)")
     iformat("{")
     nl()
+ 
     nformat("LUA::Set(Ls);")
     nformat("L = Ls;")
     nl()
@@ -555,7 +608,7 @@ else
 end
 
 nl()
-nformat("%s::~%s(){}", lclass, lclass)
+nformat("%s::~%s() {}", lclass, lclass)
 
 nl()
 format("/////// callbacks")
@@ -566,7 +619,7 @@ for k, c in next, lcallbacks do
     end
 end
 
-if(do_inherit)then
+if(do_inherit and not(do_base))then
     for _,e in next, { "mouseMove", "mouseEnter", "mouseExit", 
                        "mouseDown", "mouseDrag", "mouseUp",
                        "mouseDoubleClick", "mouseWheelMove", "mouseMagnify" } do
@@ -646,9 +699,15 @@ nformat("#ifndef __LUCE_%s_H", lclass:upper())
 nformat("#define __LUCE_%s_H", lclass:upper())
 nl()
 if ( do_inherit ) then
-    nformat("class %s", lclass)
-    nformat("    : public LComponent,")
-    format("      public %s", class)
+    if(do_base)then
+        nformat("class %s", lclass)
+        nformat("    : public LBase,")
+        format("      public %s", class)
+    else
+        nformat("class %s", lclass)
+        nformat("    : public LComponent,")
+        format("      public %s", class)
+    end
 
     if ( #callbacks > 0 ) then
         nformat("//, private %s::Listener", class)
@@ -663,6 +722,9 @@ nformat("{")
 iformat("public:") nl()
     if ( do_inherit ) then
         nformat("%s(lua_State*);", lclass)
+        if(do_base) then
+            nformat("%s(lua_State*, const %s&);", lclass, class)
+        end
     else
         nformat("%s(lua_State*, Component* child = nullptr, const String& name = String::empty);", lclass )
     end
@@ -745,7 +807,7 @@ iformat("private:") nl()
         end
         nl()
 
-        if(do_inherit)then
+        if(do_inherit and not(do_base))then
             for _,e in next, { "mouseMove", "mouseEnter", "mouseExit", 
                                "mouseDown", "mouseDrag", "mouseUp",
                                "mouseDoubleClick", "mouseWheelMove", "mouseMagnify" } do
