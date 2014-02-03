@@ -12,7 +12,7 @@ Bind a JUCE class to LUCE
     @license GPLv3
     @copyright 
 
-(c) 2013, Peersuasive Technologies
+(c) 2013-2014, Peersuasive Technologies
 
 ------------------------------------------------------------------------------]]
 
@@ -27,7 +27,13 @@ local code = mp:parse( assert(arg and arg[1], "Missing input class") )
 assert( code, "Parsing failed" )
 
 local lclass = arg[2] or "L"..code.class.name
+if (""==lclass) then lclass="L"..code.class.name end
 local do_inherit = (not arg[3] and true) or (arg[3]~="false")
+local do_core = false
+if (do_inherit == "core") then
+    do_core = true
+    do_inherit = false
+end
 local do_base    = arg[4]=="true" or false
 local no_file = arg[5] and (arg[5]=="true")
 
@@ -40,7 +46,7 @@ else
     sep = "->"
 end
 
-local methods, callbacks = code.methods, {}
+local methods, callbacks, statics = code.methods, {}, {}
 -- some setters are captured as callbacks
 for _,c in next, code.callbacks do
     if c.callback.name:match("^set") or c.callback.name:match("^add") then
@@ -52,6 +58,12 @@ for _,c in next, code.callbacks do
     else
         callbacks[#callbacks+1] = c
     end
+end
+
+for _,s in next, code.statics do
+    s.static.sname = s.static.name
+    s.static.name = "s_"..s.static.name
+    statics[#statics+1] = s
 end
 
 -- LComponent methods
@@ -176,6 +188,8 @@ local types = {
 
     bool   = "boolean",
 
+    StringRef = "LUA::getString(2)",
+
     ["std::map"] = "table",
     map    = "table",
     ["std::list"] = "table",
@@ -183,18 +197,17 @@ local types = {
     Array  = "table",
     HashMap = "table",
     array  = "table",
-
-    StringRef = "LUA::getString(2)",
-    Rectangle = "LUA::getRectangle(2)",
-    Point     = "LUA::getPoint(2)",
     Range     = "LUA::getRange(2)",
     SparseSet = "LUA::getSparseSet(2)",
 
-    Justification = "(Justification)LUA::getNumber(2)",
-
-
     object = "object",
 }
+
+if not(do_core)then
+    types.Rectangle = "LUA::getRectangle(2)"
+    types.Point     = "LUA::getPoint(2)"
+    types.Justification = "(Justification)LUA::getNumber(2)"
+end
 
 local return_types = {
     String = "string",
@@ -225,19 +238,20 @@ local return_types = {
     HashMap = "table",
     array  = "table",
 
-    Rectangle = "LUA::returnTable",
-    StringRef = "LUA::returnTable",
-    Rectangle = "LUA::returnTable",
-    RectangleList = "LUA::returnTable",
-    Point     = "LUA::returnTable",
     Range     = "LUA::returnTable",
     SparseSet = "LUA::returnTable",
 
-    Justification = "LUA::returnNumber",
-
+    void      = "void",
     object = "object",
 }
-
+if not(do_core)then
+    return_types.Rectangle = "LUA::returnTable"
+    return_types.StringRef = "LUA::returnTable"
+    return_types.Rectangle = "LUA::returnTable"
+    return_types.RectangleList = "LUA::returnTable"
+    return_types.Point         = "LUA::returnTable"
+    return_types.Justification = "LUA::returnNumber"
+end
 
 local numbers = {
     float  = true,
@@ -266,6 +280,10 @@ local function getReturnMethod(c)
         return "LUA::returnBoolean"
     end
 
+    if ( t == "void" ) then
+        return "DIRECT",
+               "return 0;"
+    end
     if ( t ~= "object" ) then
         return t
     end
@@ -275,17 +293,19 @@ local function getReturnMethod(c)
     if ( lclass == "L"..c ) then
         return "CHECK", 
         string.format(
-            [[return LUA::storeAndReturnUserdata<%s>( new %s(LUA::Get(),]],
+            [[return LUA::storeAndReturnUserdata<%s>( new %s(L,]],
             lclass, lclass
         ), 
-        "));"
+        "));",
+        true
     else
         return "CHECK TODO", 
         string.format(
             [[return LUA::storeAndReturnUserdata<%s>( new %s(L,]],
             "L"..c, "L"..c
         ), 
-        "));"
+        "));",
+        true
 
         --return "LUA::TODO_RETURN_OBJECT_"..c
     end
@@ -366,6 +386,7 @@ end
 
 
 local lua_call = "int %s::%s ( lua_State* ) {"
+local lua_call_full = "int %s::%s ( lua_State *L ) {"
 local camel = function(s) return s:gsub("(%a)([%w_]*)", function(a,b) return a:lower()..b end) end
 
 local cc = [[
@@ -389,12 +410,14 @@ local cc = [[
 
 local lcode = {}
 local lmethods = {}
+local lsmethods = {}
 local lgetsetters = {}
 local llgetsetters = {getters = {}, setters = {}}
 
 local lgetters = {}
 local lsetters = {}
 local lcallbacks = {}
+local lstatics = {}
 
 local function build_arg(a, i, do_simple)
     --local i = i or -1
@@ -478,9 +501,10 @@ for k, v in next, methods do
 
     -- getters
     else
-        local luce_method, formatted, append = getReturnMethod( v.method.return_type )
+        local luce_method, formatted, append, is_full = getReturnMethod( v.method.return_type )
         local todo = luce_method:match("TODO") and true
         local check = luce_method:match("CHECK") and true
+        local direct = luce_method:match("DIRECT") and true
         local body = {}
         body[#body+1] = prefix()
         local args = ""
@@ -501,6 +525,13 @@ for k, v in next, methods do
             body[#body+1] = string.format("%s%s%s", itab, comm, formatted)
             body[#body+1] = string.format("%s%s    %s(%s)", itab, comm, meth, args)
             body[#body+1] = string.format("%s%s%s", itab, comm, append)
+
+        elseif(direct)then
+            local comm = todo and "// " or ""
+            local meth = string.format("%s%s%s", class, sep, v.method.name)
+            body[#body+1] = string.format("%s%s%s(%s);", itab, comm, meth, args)
+            body[#body+1] = string.format("%s%s%s", itab, comm, formatted)
+
         else
             local meth = string.format("%s%s%s", class, sep, v.method.name)
             body[#body+1] = string.format( "%s%sreturn %s( %s(%s) );", itab, todo and "// " or "", luce_method, meth, args )
@@ -524,7 +555,7 @@ for k, v in next, methods do
                 lgetters[name].body = { lgetters[name].body, body }
             end
         else
-            lgetters[name] = { name = real_name, body = body }
+            lgetters[name] = { name = real_name, body = body, full = is_full }
         end
     end
     
@@ -532,9 +563,76 @@ for k, v in next, methods do
     end -- end visibility check
 end
 
+local has_statics = false
+for k, v in next, statics do
+    if (v.visibility ~= "private") then
+        has_statics = true
+        
+        local luce_method, formatted, append, is_full = getReturnMethod( v.static.return_type )
+        local todo = luce_method:match("TODO") and true
+        local check = luce_method:match("CHECK") and true
+        local direct = luce_method:match("DIRECT") and true
+        local body = {}
+        body[#body+1] = prefix()
+        local args = ""
+        if ( #v.static.args > 0 ) then
+            args = {}
+            for i,a in next, v.static.args do
+                local arg, rt, todo_ = build_arg(a, 2)
+                todo = todo or todo_
+                body[#body+1] = arg
+                args[#args+1] = rt
+            end
+            args = " "..table.concat(args, ", ").." "
+        end
+        if(check)then
+            local comm = todo and "// " or ""
+            body[#body+1] = string.format("%s// CHECK", itab)
+            local meth = string.format("%s%s%s", class, sep, v.static.sname)
+            body[#body+1] = string.format("%s%s%s", itab, comm, formatted)
+            body[#body+1] = string.format("%s%s    %s(%s)", itab, comm, meth, args)
+            body[#body+1] = string.format("%s%s%s", itab, comm, append)
+
+        elseif(direct)then
+            local comm = todo and "// " or ""
+            local meth = string.format("%s%s%s", class, sep, v.static.sname)
+            body[#body+1] = string.format("%s%s%s(%s);", itab, comm, meth, args)
+            body[#body+1] = string.format("%s%s%s", itab, comm, formatted)
+
+        else
+            local meth = string.format("%s%s%s", class, sep, v.static.sname)
+            body[#body+1] = string.format( "%s%sreturn %s( %s(%s) );", itab, todo and "// " or "", luce_method, meth, args )
+        end
+        if ( todo ) then
+            body[#body+1] = string.format( "%slua_settop(LUA::Get(), 1); // added by TODO", itab )
+            body[#body+1] = string.format( '%sreturn %s( "%s %s(%s)" );', 
+                                itab, "LUA::TODO_OBJECT", v.static.return_type, v.static.name, args )
+            -- body[#body+1] = string.format( "%sreturn 0; // added by TODO", itab )
+        end
+        body[#body+1] = postfix()
+
+        local name = v.static.name
+        local sname = v.static.sname
+        if ( lstatics[name] ) then
+            table.insert(body, 1, "// override")
+            if ("table" == type(lstatics[name].body[1]) ) then
+                lstatics[name].body[#lstatics[name].body+1] = body
+            else
+                table.insert(lstatics[name].body, 1, "// override")
+                lstatics[name].body = { lstatics[name].body, body }
+            end
+        else
+            lstatics[name] = { name = name, sname = sname, body = body, full = is_full }
+        end
+
+    end
+end
+
 -- try to keep getters/setters together
+local has_getsetters = false
 for k, m in next, lgetters do
     if ( lsetters[k] ) then
+        has_getsetters = true
         lgetsetters[#lgetsetters+1] = 
             string.format( [[{"%s", &%s::%s, &%s::%s}]], camel(k), lclass, m.name, lclass, lsetters[k].name )
         lmethods[#lmethods+1] = string.format("method( %s, %s )", lclass, m.name)
@@ -547,14 +645,22 @@ for k, m in next, lgetters do
         lmethods[#lmethods+1] = string.format("method( %s, %s )", lclass, m.name)
     end
 end
+local has_setters = false
 for k, m in next, lsetters do
+    has_setters = true
     lmethods[#lmethods+1] = string.format("method( %s, %s )", lclass, m.name)
 end
 
+for k, m in next, lstatics do
+    lsmethods[#lsmethods+1] = string.format("smethod( %s, %s )", lclass, m.sname)
+end
+
 -- callbacks
+local has_callbacks = false
 for _, c in next, callbacks do
     --if ( c.visibility == "public" or ( do_inherit and c.visibility == "protected") ) then
     if ( c.visibility ~= "private" ) then
+        has_callbacks = true
         local name = c.callback.name
         local args = ""
         if ( #c.callback.args > 0 ) then
@@ -618,7 +724,7 @@ nformat(cc, lclass, "cpp", 2014)
 nformat('#include "%s_inh.h"', lclass)
 nl()
 
-nformat("////// static methods")
+--nformat("////// static methods")
 nformat('const char %s::className[] = "%s";', lclass, lclass)
 
 -- TODO: if inherited, add LComponent inheritence too, in a separate _inh.h header,
@@ -641,17 +747,25 @@ nformat("const Luna<%s>::FunctionType %s::methods[] = {", lclass, lclass )
 dformat("};") nl()
 nl()
 
+nformat("const Luna<%s>::StaticType %s::statics[] = {", lclass, lclass )
+    tab()
+    for _,l in next, lsmethods do
+        nformat("%s,", l)
+    end
+    nformat("%s", "{0,0}")
+dformat("};") nl()
+nl()
 
 -- ctor/dtor
-nformat("/////// ctor/dtor")
+--nformat("/////// ctor/dtor")
 if ( do_inherit ) then
     if ( do_base ) then
         nformat("%s::%s(lua_State *L)", lclass, lclass)
         nformat('    : LBase(L, "'..lclass..'", true),')
         nformat("      %s( /* TODO: add args */ )", class)
         iformat("{") nl()
-        iformat("if ( lua_isstring(L, 2) )") nl()
-        nformat("myName( LUA::getString(L, 2) );")
+        --iformat("if ( lua_isstring(L, 2) )") nl()
+        --nformat("myName( LUA::getString(L, 2) );")
         dtab()
         --nl()
         --nformat("REGISTER_CLASS(%s);", lclass)
@@ -661,8 +775,8 @@ if ( do_inherit ) then
         nformat('    : LBase(L, "'..lclass..'", true),')
         nformat("      %s( class_ )", class)
         iformat("{") nl()
-        iformat("if ( lua_isstring(L, 2) )") nl()
-        nformat("myName( LUA::getString(L, 2) );")
+        --iformat("if ( lua_isstring(L, 2) )") nl()
+        --nformat("myName( LUA::getString(L, 2) );")
         dtab()
         --nl()
         --nformat("REGISTER_CLASS(%s);", lclass)
@@ -713,12 +827,14 @@ nl()
 nformat("%s::~%s() {}", lclass, lclass)
 
 nl()
+if(has_callbacks)then
 format("/////// callbacks")
 for k, c in next, lcallbacks do
     nl()
     for _, l in next, c.body do
         nformat(l)
     end
+end
 end
 
 if(do_inherit and not(do_base))then
@@ -734,10 +850,15 @@ if(do_inherit and not(do_base))then
 end
 
 nl()
+if(has_getsetters)then
 format("/////// getters/setters")
 for k, m in next, llgetsetters.getters do
     nl()
-    iformat( lua_call, lclass, m.name ) nl()
+    if(m.full)then
+        iformat( lua_call_full, lclass, m.name ) nl()
+    else
+        iformat( lua_call, lclass, m.name ) nl()
+    end
     for _, l in next, m.body do
         if ("table"==type(l)) then
             nl()
@@ -763,28 +884,43 @@ for k, m in next, llgetsetters.getters do
     end
     dformat( "}" ) nl()
 end
+end
 
-for i, t in next, { lgetters, lsetters } do
+for i, t in next, { lstatics, lgetters, lsetters } do
     if ( i == 1 ) then
+        if(has_statics)then
+            nl() format("/////// statics")
+        end
+    elseif( i == 2 ) then
         nl() format("/////// getters")
     else
-        nl() format("/////// setters")
+        if(has_setters)then
+            nl() format("/////// setters")
+        end
     end
     for k, m in next, t do
         nl()
-    iformat( lua_call, lclass, m.name ) nl()
-        for _, l in next, m.body do
-            if ("table"==type(l)) then
-                nl()
-                for _, ll in next, l do
-                    nformat(ll)
-                end
-            else
-                nformat(l)
-            end
+        if(m.full)then
+            iformat( lua_call_full, lclass, m.name ) nl()
+        else
+            iformat( lua_call, lclass, m.name ) nl()
         end
-    dformat( "}" ) nl()
-    lmethods[#lmethods+1] = string.format("method( %s, %s )", lclass, m.name)
+            for _, l in next, m.body do
+                if ("table"==type(l)) then
+                    nl()
+                    for _, ll in next, l do
+                        nformat(ll)
+                    end
+                else
+                    nformat(l)
+                end
+            end
+        dformat( "}" ) nl()
+        if(i==1)then
+            --lstatics[#lstatics+1] = string.format("smethod( %s, %s )", lclass, m.sname)
+        else
+            lmethods[#lmethods+1] = string.format("method( %s, %s )", lclass, m.name)
+        end
     end
 end
 
@@ -796,7 +932,7 @@ unsetO()
 ---
 
 setO(h)
-nformat(cc, lclass, "h", 2013)
+nformat(cc, lclass, "h", 2014)
 nformat("#ifndef __LUCE_%s_H", lclass:upper())
 nformat("#define __LUCE_%s_H", lclass:upper())
 nl()
@@ -834,6 +970,15 @@ iformat("public:") nl()
     nformat("~%s();", lclass)
     nl()
 
+    if(has_statics) then
+     nformat("//==============================================================================")
+    for k, m in next, lstatics do
+        nformat( "static int %s(lua_State*);", m.name )
+    end
+    nl()
+    end
+
+    if(has_getsetters)then
     -- getters/setters
     nformat("//==============================================================================")
     for k, m in next, llgetsetters.setters do
@@ -841,13 +986,7 @@ iformat("public:") nl()
         nformat( "int %s(lua_State*);", llgetsetters.getters[k].name )
     end
     nl()
-
-    -- setters
-    nformat("//==============================================================================")
-    for k, m in next, lsetters do
-        nformat( "int %s(lua_State*);", m.name )
     end
-    nl()
 
     -- getters
     nformat("//==============================================================================")
@@ -856,18 +995,32 @@ iformat("public:") nl()
     end
     nl()
 
+
+    if(has_setters)then
+    -- setters
+    nformat("//==============================================================================")
+    for k, m in next, lsetters do
+        nformat( "int %s(lua_State*);", m.name )
+    end
+    nl()
+    end
+
+    if(has_callbacks)then
     -- callbacks
     nformat("//==============================================================================")
     for k,_ in next, lcallbacks do
         nformat( "int %s(lua_State*);", k )
     end
     nl()
+    end
 
+    nformat("//==============================================================================")
     nformat("static const char className[];")
     nformat("static const Luna<%s>::Inheritence inherits[];", lclass)
     nformat("static const Luna<%s>::InheritenceF inheritsF[];", lclass)
     nformat("static const Luna<%s>::PropertyType properties[];", lclass)
     nformat("static const Luna<%s>::FunctionType methods[];", lclass)
+    nformat("static const Luna<%s>::StaticType statics[];", lclass)
     nformat("static const Luna<%s>::Enum enums[];", lclass)
     nl()
 
@@ -878,12 +1031,14 @@ iformat("protected:") nl()
     nformat("String myName;")
     nl()
 
+    if(has_callbacks)then
     nformat("//==============================================================================")
     for k,v in next, lcallbacks do
         local name = "l"..k
         nformat( "void %s;", v.proto )
     end
     nl()
+    end
 end
 
 dtab()
@@ -901,6 +1056,7 @@ iformat("private:") nl()
         nformat("//==============================================================================")
         nformat("HashMap<String,int> cb;")
     else
+        if(has_callbacks and not(do_core))then
         nl()
         nformat("//==============================================================================")
         nformat("// callbacks")
@@ -908,15 +1064,16 @@ iformat("private:") nl()
             nformat( "virtual void %s override;", v.proto )
         end
         nl()
+        end
 
-        if(do_inherit and not(do_base))then
+        if(do_inherit and not(do_base) and not(do_core))then
             for _,e in next, { "mouseMove", "mouseEnter", "mouseExit", 
                                "mouseDown", "mouseDrag", "mouseUp",
                                "mouseDoubleClick", "mouseWheelMove", "mouseMagnify" } do
                 nformat("virtual void %s(const MouseEvent&) override;", e)
             end
-        end
         nl()
+        end
     end
 
     nformat("//==============================================================================")

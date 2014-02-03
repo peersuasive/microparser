@@ -82,6 +82,7 @@ local juce_macros_f = juce_macros * spaces^0
 local main_class = nil
 local constructors = {}
 local callbacks = {}
+local statics   = {}
 local methods   = {}
 local vars      = {}
 local classes   = {}
@@ -238,6 +239,17 @@ local grammar = P{ "grammar";
                       callbacks[#callbacks+1] = v
                   end
                   ,
+    
+    static      = P"static" * spaces
+                  * Ct( 
+                        Cg( V"method_a", "static" ) 
+                        * Cg( Cc"static", "rule" )
+                        * Cg( Cb("visibility"), "visibility" )
+                  ) / function(v)
+                      statics[#statics+1] = v
+                  end
+                  ,
+    
 
     -- skip
     operators   = Cg(Cs(
@@ -314,6 +326,7 @@ local grammar = P{ "grammar";
         + V"preprocessor"
         + V"main_class"
         + V"callback"
+        + V"static"
         + V"visibility"
         + V"destructor"
         + V"constructor"
@@ -347,9 +360,10 @@ local function parse(self, file)
     local r = grammar:match( data )
     return r and {
         class        = main_class,
-        total        = #constructors + #callbacks + #methods + #vars + #classes,
+        total        = #constructors + #callbacks + #statics + #methods + #vars + #classes,
         constructors = constructors,
         callbacks    = callbacks,
+        statics      = statics,
         methods      = methods,
         vars         = vars,
         classes      = classes,
