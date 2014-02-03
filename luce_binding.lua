@@ -91,6 +91,7 @@ end
 
 local h = "h"
 local cpp = "cpp"
+local inh = "inh"
 local default_output = nil
 
 local function testFile(f)
@@ -113,6 +114,9 @@ local function setO( o )
     elseif ( o == h ) then
         testFile(lclass..".h" )
         default_output = io.open( lclass..".h", "wb" )
+    elseif ( o == inh ) then
+        testFile(lclass.."_inh.h" )
+        default_output = io.open( lclass.."_inh.h", "wb" )
     else
         error("Unknown output: "..(o or "<nil>"), 2)
     end
@@ -1082,4 +1086,66 @@ iformat("private:") nl()
 dformat("};") nl() -- end class
 nl()
 nformat("#endif // __LUCE_%s_H", lclass:upper())
+unsetO()
+
+
+---
+-- inh header
+---
+
+setO(inh)
+nformat(cc, lclass.."_inh", "h", 2014)
+nformat("#ifndef __LUCE_%s_INH_H", lclass:upper())
+nformat("#define __LUCE_%s_INH_H", lclass:upper())
+nl()
+if ( do_inherit ) then
+    if(do_base)then
+        nformat("// LBase inheritage")
+        iformat("const Luna<%s>::Inheritence %s::inherits[] = {", lclass, lclass) nl()
+            nformat([[{0,0}]])
+        dformat([[};]]) nl()
+
+        nl()
+        iformat("const Luna<%s>::InheritenceF %s::inheritsF[] = {", lclass, lclass) nl()
+            nformat("{0,0}")
+        dformat("};") nl()
+
+        nl()
+        iformat("const Luna<%s>::Enum %s::enums[] = {", lclass, lclass) nl()
+            nformat("{0}")
+        dformat("};") nl()
+    else
+        -- TODO
+        nformat("// LComponent inheritage")
+        iformat("const Luna<%s>::Inheritence %s::inherits[] = {", lclass, lclass) nl()
+            nformat([[{0,0}]])
+        dformat([[};]]) nl()
+
+        nl()
+        iformat("const Luna<%s>::InheritenceF %s::inheritsF[] = {", lclass, lclass) nl()
+            nformat("{0,0}")
+        dformat("};") nl()
+
+        nl()
+        iformat("const Luna<%s>::Enum %s::enums[] = {", lclass, lclass) nl()
+            nformat("{0}")
+        dformat("};") nl()
+    end
+else
+        nformat("// LBase inheritage")
+        iformat("const Luna<%s>::Inheritence %s::inherits[] = {", lclass, lclass) nl()
+            nformat([[{0,0}]])
+        dformat([[};]]) nl()
+
+        nl()
+        iformat("const Luna<%s>::InheritenceF %s::inheritsF[] = {", lclass, lclass) nl()
+            nformat("{0,0}")
+        dformat("};") nl()
+
+        nl()
+        iformat("const Luna<%s>::Enum %s::enums[] = {", lclass, lclass) nl()
+            nformat("{0}")
+        dformat("};") nl()
+end
+nformat("#endif // __LUCE_%s_INH_H", lclass:upper())
 unsetO()
