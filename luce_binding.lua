@@ -60,7 +60,7 @@ local function Set(t, k)
     t[k] = true
 end
 lcomponent = {}
-if ( do_inherit ) then
+if ( do_inherit and not(do_base) ) then
     local inh = io.open("LComponent_inh.list") or io.open("../LComponent_inh.list")
     if(inh)then
         while (true) do
@@ -161,11 +161,18 @@ local types = {
     ["std::string"] = "string",
     string = "string",
 
-    float  = "float",
-    int    = "int",
-    double = "double",
     number = "number",
-    uint8  = "uint8",
+    float  = "numberT",
+    int    = "numberT",
+    double = "numberT",
+    int8   = "numberT",
+    uint8  = "numberT",
+    int16  = "numberT",
+    uint16 = "numberT",
+    int32  = "numberT",
+    uint32 = "numberT",
+    int64  = "numberT",
+    uint64 = "numberT",
 
     bool   = "boolean",
 
@@ -177,28 +184,92 @@ local types = {
     HashMap = "table",
     array  = "table",
 
+    StringRef = "LUA::getString(2)",
+    Rectangle = "LUA::getRectangle(2)",
+    Point     = "LUA::getPoint(2)",
+    Range     = "LUA::getRange(2)",
+    SparseSet = "LUA::getSparseSet(2)",
+
+    Justification = "(Justification)LUA::getNumber(2)",
+
+
     object = "object",
 }
 
+local return_types = {
+    String = "string",
+    char   = "string",
+    ["std::string"] = "string",
+    string = "string",
+
+    number = "number",
+    float  = "number",
+    int    = "number",
+    double = "number",
+    int8   = "number",
+    uint8  = "number",
+    int16  = "number",
+    uint16 = "number",
+    int32  = "number",
+    uint32 = "number",
+    int64  = "number",
+    uint64 = "number",
+
+    bool   = "boolean",
+
+    ["std::map"] = "table",
+    map    = "table",
+    ["std::list"] = "table",
+    list   = "table",
+    Array  = "table",
+    HashMap = "table",
+    array  = "table",
+
+    Rectangle = "LUA::returnTable",
+    StringRef = "LUA::returnTable",
+    Rectangle = "LUA::returnTable",
+    RectangleList = "LUA::returnTable",
+    Point     = "LUA::returnTable",
+    Range     = "LUA::returnTable",
+    SparseSet = "LUA::returnTable",
+
+    Justification = "LUA::returnNumber",
+
+    object = "object",
+}
+
+
 local numbers = {
-    float = true,
-    int = true,
+    float  = true,
+    int    = true,
     double = true,
     number = true,
-    -- uint8 = true, ?
+    int8   = true,
+    uint8  = true,
+    int16  = true,
+    uint16 = true,
+    int32  = true,
+    uint32 = true,
+    int64  = true,
+    uint64 = true,
 }
 local function getType(c)
     return types[c] or "object"
 end
 local function getReturnMethod(c)
-    local t = types[c] or "object"
-    if ( t == "number" or numbers[t] ) then
+    local t = return_types[c] or "object"
+    if ( t == "number" or numbers[c] ) then
         return "LUA::returnNumber"
     elseif ( t == "string" ) then
         return "LUA::returnString"
     elseif ( t == "boolean" ) then
         return "LUA::returnBoolean"
     end
+
+    if ( t ~= "object" ) then
+        return t
+    end
+
     --- do something with udata
     --return "LUA::TODO_RETURN_OBJECT_"..c
     if ( lclass == "L"..c ) then
@@ -209,7 +280,14 @@ local function getReturnMethod(c)
         ), 
         "));"
     else
-        return "LUA::TODO_RETURN_OBJECT_"..c
+        return "CHECK TODO", 
+        string.format(
+            [[return LUA::storeAndReturnUserdata<%s>( new %s(L,]],
+            "L"..c, "L"..c
+        ), 
+        "));"
+
+        --return "LUA::TODO_RETURN_OBJECT_"..c
     end
 end
 
@@ -223,15 +301,24 @@ local function getGetMethod(c, opt, n, p)
 
     if ( t == "number" ) then
         return pre:format("Number")
+    elseif ( t == "numberT" ) then
+        return pre:format("Number<"..c..">")
     elseif ( t == "string" ) then
         return pre:format("String")
     elseif ( t == "boolean" ) then
         return pre:format("Boolean")
-    elseif ( t == "uint8" or t == "int" or t == "float" or t == "double" ) then
-        return pre:format("Number<"..t..">")
     elseif ( t == "table" ) then
         return "LUA::getList(" .. (n and n or "") .. ")"
     end
+
+    if ( t ~= "object" ) then
+        if(p)then
+            return string.format("new %s(%s)", c, t)
+        else
+            return string.format("%s", t), true
+        end
+    end
+
     --- do something with udata
     --return "LUA::TODO_OBJECT_"..c
     if ( lclass == "L"..c) then
@@ -324,7 +411,7 @@ local function build_arg(a, i, do_simple)
         tc = "<"..table.concat(tc, ",") .. ">"
     end
 
-    local luce_method = getGetMethod( a.return_type, value, i, p )
+    local luce_method, is_ref = getGetMethod( a.return_type, value, i, p )
     local todo = luce_method:match("TODO") and "// " or ""
     local check = luce_method:match("CHECK")
     p = p or ""
@@ -332,8 +419,14 @@ local function build_arg(a, i, do_simple)
     if do_simple then
         return string.format( "%s", luce_method ), (todo ~= "") and true
     else
-        return string.format( "%s%s%s%s%s %s = %s;", itab, todo, rt, tc, p, rt_, luce_method ), 
-               rt_, (todo ~= "") and true
+        if ( is_ref ) then
+            return string.format( "%s%s%s%s%s %s ( %s );", itab, todo, rt, tc, p, rt_, luce_method ), 
+                   rt_, (todo ~= "") and true
+
+        else
+            return string.format( "%s%s%s%s%s %s = %s;", itab, todo, rt, tc, p, rt_, luce_method ), 
+                   rt_, (todo ~= "") and true
+        end
     end
 end
 
@@ -402,11 +495,12 @@ for k, v in next, methods do
             args = " "..table.concat(args, ", ").." "
         end
         if(check)then
+            local comm = todo and "// " or ""
             body[#body+1] = string.format("%s// CHECK", itab)
             local meth = string.format("%s%s%s", class, sep, v.method.name)
-            body[#body+1] = string.format("%s%s", itab, formatted)
-            body[#body+1] = string.format("%s    %s(%s)", itab, meth, args)
-            body[#body+1] = string.format("%s%s", itab, append)
+            body[#body+1] = string.format("%s%s%s", itab, comm, formatted)
+            body[#body+1] = string.format("%s%s    %s(%s)", itab, comm, meth, args)
+            body[#body+1] = string.format("%s%s%s", itab, comm, append)
         else
             local meth = string.format("%s%s%s", class, sep, v.method.name)
             body[#body+1] = string.format( "%s%sreturn %s( %s(%s) );", itab, todo and "// " or "", luce_method, meth, args )
@@ -557,8 +651,10 @@ if ( do_inherit ) then
         nformat("      %s( /* TODO: add args */ )", class)
         iformat("{") nl()
         iformat("if ( lua_isstring(L, 2) )") nl()
-        nformat("myName( lua_tostring(L, 2) );")
+        nformat("myName( LUA::getString(L, 2) );")
         dtab()
+        --nl()
+        --nformat("REGISTER_CLASS(%s);", lclass)
         dformat("}") nl() 
         nl()
         nformat("%s::%s(lua_State *L, const %s& class_)", lclass, lclass, class)
@@ -566,8 +662,10 @@ if ( do_inherit ) then
         nformat("      %s( class_ )", class)
         iformat("{") nl()
         iformat("if ( lua_isstring(L, 2) )") nl()
-        nformat("myName( lua_tostring(L, 2) );")
+        nformat("myName( LUA::getString(L, 2) );")
         dtab()
+        --nl()
+        --nformat("REGISTER_CLASS(%s);", lclass)
         dformat("}") nl()
 
     else
@@ -579,6 +677,10 @@ if ( do_inherit ) then
 
         nformat("%s::setName(myName());", class)
         nformat("//%s::addListener(this);", class)
+
+        nl()
+        nformat("REGISTER_CLASS(%s);", lclass)
+
         dformat("}") nl()
     end
 else
@@ -625,7 +727,7 @@ if(do_inherit and not(do_base))then
                        "mouseDoubleClick", "mouseWheelMove", "mouseMagnify" } do
         nl()
         nformat("void %s::%s(const MouseEvent& e) {", lclass, e)
-        nformat("    LComponent::l%s(e)", e)
+        nformat("    LComponent::l%s(e);", e)
         dformat("}")
         nl()
     end
