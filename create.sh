@@ -23,5 +23,8 @@ $CPP -E -P $FLAGS "$file" > "$out" || { echo "Failed to preprocess input file"; 
 export LUA_PATH="$home/?.lua;$(lua -e 'print(package.path)')"
 $LUA "$home/luce_binding.lua" "$out" $cn $inh $screen || error=1
 
+out2="${file##*/}"; out2="${out2%.*}"_dumped.h
+mv -f "$out" "$out2"
+
 \rm -f "$out"
 ((!error)) && echo OK || echo KO
