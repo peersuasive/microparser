@@ -210,7 +210,7 @@ local types = {
 if not(do_core)then
     types.Rectangle = "LUA::getRectangle(2)"
     types.Point     = "LUA::getPoint(2)"
-    types.Justification = "(Justification)LUA::getNumber(2)"
+    types.Justification = "(Justification)LUA::getNumber<int>(2)"
 end
 
 local return_types = {
@@ -844,13 +844,43 @@ end
 if(do_inherit and not(do_base))then
     for _,e in next, { "mouseMove", "mouseEnter", "mouseExit", 
                        "mouseDown", "mouseDrag", "mouseUp",
-                       "mouseDoubleClick", "mouseWheelMove", "mouseMagnify" } do
+                       "mouseDoubleClick" } do
         nl()
         nformat("void %s::%s(const MouseEvent& e) {", lclass, e)
-        nformat("    LComponent::l%s(e);", e)
+        nformat('    if(hasCallback("%s"))', e)
+        nformat("        LComponent::l%s(e);", e)
+        nformat("    else")
+        nformat("        %s::mouseWheelMove(e);", class)
         dformat("}")
         nl()
     end
+    -- mouseWheelMove
+    nl()
+    nformat("void %s::mouseWheelMove(const MouseEvent& e, const MouseWheelDetails& wheel) {", lclass)
+    nformat('    if(hasCallback("%s"))', "mouseWheelMove")
+    nformat("        LComponent::lmouseWheelMove(e, wheel);")
+    nformat("    else")
+    nformat("        %s::mouseWheelMove(e, wheel);", class)
+    dformat("}")
+    nl()
+    -- mouseMagnify
+    nl()
+    nformat("void %s::mouseMagnify(const MouseEvent& e, float scaleFactor) {", lclass)
+    nformat('    if(hasCallback("%s"))', "mouseMagnify")
+    nformat("        LComponent::lmouseMagnify(e, scaleFactor);")
+    nformat("    else")
+    nformat("        %s::mouseMagnify(e, scaleFactor);", class)
+    dformat("}")
+    nl()
+    -- keyPressed
+    nl()
+    nformat("bool %s::keyPressed(const KeyPress& k) {", lclass)
+    nformat('    if(hasCallback("%s"))', "keyPressed")
+    nformat("        return LComponent::lkeyPressed(k);")
+    nformat("    else")
+    nformat("        return %s::keyPressed(k);", class)
+    dformat("}")
+    nl()
 end
 
 nl()
@@ -1073,9 +1103,12 @@ iformat("private:") nl()
         if(do_inherit and not(do_base) and not(do_core))then
             for _,e in next, { "mouseMove", "mouseEnter", "mouseExit", 
                                "mouseDown", "mouseDrag", "mouseUp",
-                               "mouseDoubleClick", "mouseWheelMove", "mouseMagnify" } do
+                               "mouseDoubleClick" } do
                 nformat("virtual void %s(const MouseEvent&) override;", e)
             end
+            nformat("virtual void %s(const MouseEvent&, const MouseWheelDetails&) override;", "mouseWheelMove")
+            nformat("virtual void %s(const MouseEvent&, float&) override;", "mouseMagnify")
+            nformat("virtual bool %s(const KeyPress&) override;", "keyPressed")
         nl()
         end
     end
